@@ -1,14 +1,14 @@
-# Backend Developer Assessment — Customer Data Pipeline
+# Customer Data Pipeline
 
-A data pipeline built with 3 Docker services:
+A containerized data pipeline that ingests customer records from a mock data source into PostgreSQL, exposing a queryable REST API on top.
 
 | Service | Stack | Port |
 |---|---|---|
-| **mock-server** | Flask | 5000 |
+| **mock-server** | Flask | 5001 |
 | **pipeline-service** | FastAPI + dlt + SQLAlchemy | 8000 |
 | **postgres** | PostgreSQL 15 | 5432 |
 
-**Flow**: `Flask (JSON) → FastAPI (dlt ingest) → PostgreSQL → API Response`
+**Flow**: `Mock Server (JSON) → Pipeline Service (dlt ingest) → PostgreSQL → REST API`
 
 ---
 
@@ -22,34 +22,23 @@ A data pipeline built with 3 Docker services:
 ## Quick Start
 
 ```bash
-# Clone and start all services
-git clone https://github.com/dikyayodihamzah/backend-assessment.git
-cd backend-assessment
-docker-compose up -d --build
+git clone https://github.com/dikyayodihamzah/customer-data-pipeline.git
+cd customer-data-pipeline
+docker compose up -d --build
 ```
 
-Wait ~10 seconds for services to be ready, then:
+Wait ~10 seconds for services to be ready, then trigger the first ingestion:
 
 ```bash
-# Ingest customers from Flask into PostgreSQL
 curl -X POST "http://localhost:8000/api/ingest"
 # {"status":"success","records_processed":25}
-
-# Query customers from the pipeline service (paginated)
-curl "http://localhost:8000/api/customers?page=1&limit=5"
-
-# Get a single customer
-curl "http://localhost:8000/api/customers/CUST-001"
-
-# Directly query the mock server
-curl "http://localhost:5000/api/customers?page=1&limit=5"
 ```
 
 ---
 
 ## API Reference
 
-### Mock Server (port 5000)
+### Mock Server (port 5001)
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -62,17 +51,35 @@ curl "http://localhost:5000/api/customers?page=1&limit=5"
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/health` | Health check |
-| `POST` | `/api/ingest` | Fetch all data from Flask and upsert to PostgreSQL |
+| `POST` | `/api/ingest` | Fetch all records from mock server and upsert into PostgreSQL |
 | `GET` | `/api/customers` | Paginated customers from database (`page`, `limit`) |
 | `GET` | `/api/customers/{id}` | Single customer from database or `404` |
 | `GET` | `/docs` | Interactive Swagger UI |
 
 ---
 
+## Usage Examples
+
+```bash
+# Ingest all customer data
+curl -X POST "http://localhost:8000/api/ingest"
+
+# Query customers with pagination
+curl "http://localhost:8000/api/customers?page=1&limit=10"
+
+# Get a single customer
+curl "http://localhost:8000/api/customers/CUST-001"
+
+# Query the mock server directly
+curl "http://localhost:5001/api/customers?page=1&limit=5"
+```
+
+---
+
 ## Project Structure
 
 ```text
-backend-assessment/
+customer-data-pipeline/
 ├── docker-compose.yml
 ├── README.md
 ├── mock-server/
@@ -95,9 +102,9 @@ backend-assessment/
 
 ## Architecture Notes
 
-- **dlt** is used as the pipeline abstraction layer — the `@dlt.resource` decorator defines the data source with `primary_key` and `write_disposition`, while auto-pagination pulls all pages from the Flask API.
-- **SQLAlchemy** handles table creation (on startup) and query operations. Upserts use PostgreSQL's `INSERT ... ON CONFLICT DO UPDATE` via `sqlalchemy.dialects.postgresql.insert`.
-- **Docker health checks** on PostgreSQL ensure dependent services only start when the database is ready.
+- **dlt** is used as the pipeline abstraction layer — the `@dlt.resource` decorator defines the data source with `primary_key` and handles auto-pagination across all pages from the mock server.
+- **SQLAlchemy** manages table creation on startup and all query operations. Upserts use PostgreSQL's `INSERT ... ON CONFLICT DO UPDATE` via `sqlalchemy.dialects.postgresql.insert`.
+- **Docker health checks** on PostgreSQL ensure dependent services only start once the database is ready.
 - The pipeline is **idempotent** — running `POST /api/ingest` multiple times safely upserts without creating duplicates.
 
 ---
@@ -105,6 +112,6 @@ backend-assessment/
 ## Stopping Services
 
 ```bash
-docker-compose down          # stop containers
-docker-compose down -v       # stop containers and remove volumes
+docker compose down      # stop containers
+docker compose down -v   # stop containers and remove volumes
 ```
